@@ -16,7 +16,8 @@ var GamepadBridge = (function () {
   var POLL_INTERVAL_MS = 8;
   var OVERLAY_INTERVAL_MS = 250;
   var MAX_CONTROLLERS = 4;
-  var DEBUG_OVERLAY = true;
+  // Set to true to show the debug overlay during a stream
+  var DEBUG_OVERLAY = false;
 
   var pollTimer = null;
   var overlayTimer = null;
