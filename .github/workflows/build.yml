@@ -1,0 +1,30 @@
+# .github/workflows/build.yml
+# Builds MoonlightNaCl.wgt on GitHub's servers and uploads it as an artifact.
+name: Build MoonlightNaCl.wgt
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with Docker
+        run: docker build -t moonlight-tizen-nacl-build .
+
+      - name: Copy the .wgt out of the image
+        run: |
+          id=$(docker create moonlight-tizen-nacl-build)
+          docker cp "$id:/home/moonlight/MoonlightNaCl.wgt" ./MoonlightNaCl.wgt
+          docker rm "$id"
+          ls -l MoonlightNaCl.wgt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MoonlightNaCl
+          path: MoonlightNaCl.wgt
+          if-no-files-found: error

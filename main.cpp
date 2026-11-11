@@ -22,6 +22,9 @@
 
 #define MSG_OPENURL "openUrl"
 
+// Sent by the JS code with the current state of one controller
+#define MSG_GAMEPAD_STATE "gamepadState"
+
 MoonlightInstance* g_Instance;
 
 class MoonlightModule : public pp::Module {
@@ -107,7 +110,9 @@ void* MoonlightInstance::InputThreadFunc(void* context) {
     MoonlightInstance* me = (MoonlightInstance*)context;
 
     while (me->m_Running) {
-        me->PollGamepads();
+        // Gamepads are no longer polled here: PPB_Gamepad reports no
+        // controllers on Tizen, so the JS side sends them instead
+        // (see static/js/gamepadbridge.js and HandleGamepadState()).
         me->ReportMouseMovement();
         
         // Poll every 5 ms
@@ -168,7 +173,10 @@ void MoonlightInstance::HandleMessage(const pp::Var& var_message) {
     std::string method = msg.Get("method").AsString();
     pp::VarArray params(msg.Get("params"));
     
-    if (strcmp(method.c_str(), MSG_START_REQUEST) == 0) {
+    // Checked first because it arrives every few milliseconds during a stream
+    if (strcmp(method.c_str(), MSG_GAMEPAD_STATE) == 0) {
+        HandleGamepadState(params);
+    } else if (strcmp(method.c_str(), MSG_START_REQUEST) == 0) {
         HandleStartStream(callbackId, params);
     } else if (strcmp(method.c_str(), MSG_STOP_REQUEST) == 0) {
         HandleStopStream(callbackId, params);

@@ -115,6 +115,47 @@ void MoonlightInstance::PollGamepads() {
     }
 }
 
+// Called with the state of one controller, read by static/js/gamepadbridge.js
+// from the web Gamepad API. Params:
+//   [0] controller slot, [1] active controller mask,
+//   [2] pressed buttons (bit i = standard-mapping button i),
+//   [3] left trigger, [4] right trigger (0..255),
+//   [5] left stick X, [6] left stick Y, [7] right stick X, [8] right stick Y
+//       (-32767..32767, Y positive = up)
+void MoonlightInstance::HandleGamepadState(pp::VarArray args) {
+    if (!m_Running || args.GetLength() < 9) {
+        return;
+    }
+
+    short controllerIndex = static_cast<short>(args.Get(0).AsInt());
+    short activeGamepadMask = static_cast<short>(args.Get(1).AsInt());
+    int pressedButtons = args.Get(2).AsInt();
+
+    if (controllerIndex < 0 || controllerIndex >= 4) {
+        return;
+    }
+
+    int buttonFlags = 0;
+    const unsigned int mappingCount =
+        sizeof(k_StandardGamepadButtonMapping) / sizeof(k_StandardGamepadButtonMapping[0]);
+    for (unsigned int i = 0; i < mappingCount; i++) {
+        if (pressedButtons & (1 << i)) {
+            buttonFlags |= k_StandardGamepadButtonMapping[i];
+        }
+    }
+
+    unsigned char leftTrigger = static_cast<unsigned char>(args.Get(3).AsInt());
+    unsigned char rightTrigger = static_cast<unsigned char>(args.Get(4).AsInt());
+    short leftStickX = static_cast<short>(args.Get(5).AsInt());
+    short leftStickY = static_cast<short>(args.Get(6).AsInt());
+    short rightStickX = static_cast<short>(args.Get(7).AsInt());
+    short rightStickY = static_cast<short>(args.Get(8).AsInt());
+
+    LiSendMultiControllerEvent(controllerIndex, activeGamepadMask,
+                               buttonFlags, leftTrigger, rightTrigger,
+                               leftStickX, leftStickY, rightStickX, rightStickY);
+}
+
 void MoonlightInstance::ClControllerRumble(unsigned short controllerNumber, unsigned short lowFreqMotor, unsigned short highFreqMotor)
 {
     const float weakMagnitude = static_cast<float>(highFreqMotor) / static_cast<float>(UINT16_MAX);

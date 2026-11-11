@@ -37,6 +37,8 @@ function handleMessage(msg) {
   } else { // else, it's just info, or an event
     console.log('%c[messages.js, handleMessage]', 'color:gray;', 'Message data: ', msg.data)
     if (msg.data.indexOf('streamTerminated: ') === 0) { // if it's a recognized event, notify the appropriate function
+      GamepadBridge.stop();
+
       // Release our keep awake request
       // if (runningOnChrome) {
       //   chrome.power.releaseKeepAwake();
@@ -72,6 +74,9 @@ function handleMessage(msg) {
       $('#loadingSpinner').css('display', 'none');
       $('body').css('backgroundColor', 'black');
 
+      // Send controller input to the host from JS (PPB_Gamepad sees nothing on Tizen)
+      GamepadBridge.start();
+
       // Keep the display awake while streaming
       // if (runningOnChrome) {
       //   chrome.power.requestKeepAwake("display");
@@ -95,7 +100,11 @@ function handleMessage(msg) {
 
       // We may not actually have a gamepad at this index.
       // Even if we do have a gamepad, it may not have a vibrationActuator associated with it.
-	    gamepad.vibrationActuator.playEffect('dual-rumble', {
+      var gamepad = GamepadBridge.getPadForSlot(gamepadIdx);
+      if (!gamepad || !gamepad.vibrationActuator) {
+        return;
+      }
+      gamepad.vibrationActuator.playEffect('dual-rumble', {
         startDelay: 0,
         duration: 5000, // Moonlight should be sending another rumble event when stopping.
         weakMagnitude: weakMagnitude,

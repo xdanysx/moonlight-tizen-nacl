@@ -108,6 +108,7 @@ class MoonlightInstance : public pp::Instance, public pp::MouseLock {
         void ReportMouseMovement();
         
         void PollGamepads();
+        void HandleGamepadState(pp::VarArray args);
         
         void MouseLockLost();
         void DidLockMouse(int32_t result);

@@ -45,6 +45,13 @@ RUN wget -nv -O nacl_sdk.zip 'https://developer.samsung.com/smarttv/file/55e181c
 # Build moonlight
 COPY --chown=moonlight . ./moonlight-tizen-nacl
 
+# A checkout on Windows may have CRLF line endings, which break make and the
+# toolchain scripts. Convert all text files to LF before building.
+RUN cd moonlight-tizen-nacl && \
+	find . -path ./.git -prune -o -type f -print0 | \
+	xargs -0 grep -IlZ "$(printf '\r')" 2>/dev/null | \
+	xargs -0 -r sed -i 's/\r$//'
+
 RUN export NACL_SDK_ROOT=/home/moonlight/pepper_63 && \
 	cd moonlight-tizen-nacl && \
 	make
