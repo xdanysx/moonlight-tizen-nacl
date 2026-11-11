@@ -123,8 +123,24 @@ void MoonlightInstance::PollGamepads() {
 //   [5] left stick X, [6] left stick Y, [7] right stick X, [8] right stick Y
 //       (-32767..32767, Y positive = up)
 void MoonlightInstance::HandleGamepadState(pp::VarArray args) {
+    // Totals reported back to the JS debug overlay, see gamepadbridge.js
+    static unsigned int s_Accepted = 0;
+    static unsigned int s_Dropped = 0;
+
     if (!m_Running || args.GetLength() < 9) {
+        s_Dropped++;
+        std::ostringstream ss;
+        ss << "gamepadAck: " << s_Accepted << "," << s_Dropped;
+        PostMessage(pp::Var(ss.str()));
         return;
+    }
+
+    s_Accepted++;
+    // Report on the first event and then every 20, to keep messages low
+    if (s_Accepted == 1 || s_Accepted % 20 == 0) {
+        std::ostringstream ss;
+        ss << "gamepadAck: " << s_Accepted << "," << s_Dropped;
+        PostMessage(pp::Var(ss.str()));
     }
 
     short controllerIndex = static_cast<short>(args.Get(0).AsInt());
