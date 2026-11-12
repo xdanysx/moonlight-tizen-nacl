@@ -7,6 +7,9 @@
 
 #include <h264_stream.h>
 
+#include <sstream>
+#include <string.h>
+
 #define INITIAL_DECODE_BUFFER_LEN 128 * 1024
 
 static unsigned char* s_DecodeBuffer;
@@ -15,6 +18,85 @@ static int s_LastTextureType;
 static int s_LastTextureId;
 static bool s_FirstFrameDisplayed;
 static uint64_t s_LastPaintFinishedTime;
+
+// --- Stream statistics, shown in the JS overlay (yellow key) ---------------
+// Each submitted frame gets an id; the ring remembers when it was received
+// from the network and when it was handed to the decoder.
+#define STATS_RING_SIZE 128
+struct FrameTimes {
+    uint64_t receiveMs;
+    uint64_t submitMs;
+};
+static FrameTimes s_FrameTimes[STATS_RING_SIZE];
+static uint32_t s_NextDecodeId;
+
+// Accumulated over the current reporting window (about one second)
+static uint64_t s_StatsWindowStartMs;
+static uint32_t s_StatsFramesPainted;
+static uint32_t s_StatsFramesDropped;
+static uint64_t s_StatsDecodeSumMs;
+static uint32_t s_StatsDecodeMaxMs;
+static uint32_t s_StatsDecodeCount;
+static uint64_t s_StatsTotalSumMs;
+static uint32_t s_StatsTotalMaxMs;
+static uint32_t s_StatsTotalCount;
+
+// SPS info for the overlay: did the host send num_reorder_frames itself?
+static int s_SpsHadRestriction = -1;
+
+static void ResetStats() {
+    memset(s_FrameTimes, 0, sizeof(s_FrameTimes));
+    s_NextDecodeId = 0;
+    s_StatsWindowStartMs = LiGetMillis();
+    s_StatsFramesPainted = 0;
+    s_StatsFramesDropped = 0;
+    s_StatsDecodeSumMs = 0;
+    s_StatsDecodeMaxMs = 0;
+    s_StatsDecodeCount = 0;
+    s_StatsTotalSumMs = 0;
+    s_StatsTotalMaxMs = 0;
+    s_StatsTotalCount = 0;
+    s_SpsHadRestriction = -1;
+}
+
+// Sends the stats of the last window to JS once per second
+static void MaybeReportStats() {
+    uint64_t now = LiGetMillis();
+    uint64_t elapsed = now - s_StatsWindowStartMs;
+    if (elapsed < 1000) {
+        return;
+    }
+
+    uint32_t rtt = 0, rttVariance = 0;
+    if (!LiGetEstimatedRttInfo(&rtt, &rttVariance)) {
+        rtt = 0;
+        rttVariance = 0;
+    }
+
+    std::ostringstream ss;
+    ss << "videoStats: "
+       << (s_StatsFramesPainted * 1000.0 / elapsed) << ","
+       << (s_StatsDecodeCount ? s_StatsDecodeSumMs / s_StatsDecodeCount : 0) << ","
+       << s_StatsDecodeMaxMs << ","
+       << (s_StatsTotalCount ? s_StatsTotalSumMs / s_StatsTotalCount : 0) << ","
+       << s_StatsTotalMaxMs << ","
+       << rtt << ","
+       << rttVariance << ","
+       << s_StatsFramesDropped << ","
+       << LiGetPendingVideoFrames() << ","
+       << s_SpsHadRestriction;
+    g_Instance->PostMessage(pp::Var(ss.str()));
+
+    s_StatsWindowStartMs = now;
+    s_StatsFramesPainted = 0;
+    s_StatsFramesDropped = 0;
+    s_StatsDecodeSumMs = 0;
+    s_StatsDecodeMaxMs = 0;
+    s_StatsDecodeCount = 0;
+    s_StatsTotalSumMs = 0;
+    s_StatsTotalMaxMs = 0;
+    s_StatsTotalCount = 0;
+}
 
 #define assertNoGLError() assert(!glGetError())
 
@@ -145,7 +227,8 @@ int MoonlightInstance::VidDecSetup(int videoFormat, int width, int height, int r
     s_LastTextureType = 0;
     s_LastTextureId = 0;
     s_FirstFrameDisplayed = false;
-    
+    ResetStats();
+
     int32_t err;
 
     if (!(drFlags & DR_FLAG_FORCE_SW_DECODE)) {
@@ -231,6 +314,24 @@ static void WriteSpsNalu(PLENTRY nalu, unsigned char* outBuffer, unsigned int* o
     
     // Fixup the SPS to what OS X needs to use hardware acceleration
     stream->sps->num_ref_frames = 1;
+
+    // Tell the decoder that frames are never reordered, so it can output
+    // each frame as soon as it is decoded. max_dec_frame_buffering and
+    // num_reorder_frames are only written if bitstream_restriction_flag is
+    // set, and that one only if the VUI is present. Without this, a decoder
+    // may hold back several frames (its full DPB) before showing the first.
+    s_SpsHadRestriction = (stream->sps->vui_parameters_present_flag &&
+                           stream->sps->vui.bitstream_restriction_flag) ? 1 : 0;
+    stream->sps->vui_parameters_present_flag = 1;
+    if (!stream->sps->vui.bitstream_restriction_flag) {
+        stream->sps->vui.bitstream_restriction_flag = 1;
+        stream->sps->vui.motion_vectors_over_pic_boundaries_flag = 1;
+        stream->sps->vui.max_bytes_per_pic_denom = 2;
+        stream->sps->vui.max_bits_per_mb_denom = 1;
+        stream->sps->vui.log2_max_mv_length_horizontal = 16;
+        stream->sps->vui.log2_max_mv_length_vertical = 16;
+    }
+    stream->sps->vui.num_reorder_frames = 0;
     stream->sps->vui.max_dec_frame_buffering = 1;
     
     // Copy the NALU prefix over from the original SPS
@@ -276,10 +377,13 @@ int MoonlightInstance::VidDecSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
         entry = entry->next;
     }
     
-    // Start the decoding
-    uint32_t packedMillis = ProfilerGetPackedMillis();
-    g_Instance->m_VideoDecoder->Decode(packedMillis, offset, s_DecodeBuffer, pp::BlockUntilComplete());
-    ProfilerPrintPackedDeltaFromNow("Decode (blocking)", packedMillis);
+    // Start the decoding. The decode id indexes the stats ring, so we can
+    // tell in PictureReady/PaintFinished how long this frame took.
+    uint32_t decodeId = s_NextDecodeId++;
+    FrameTimes& times = s_FrameTimes[decodeId % STATS_RING_SIZE];
+    times.receiveMs = decodeUnit->receiveTimeMs;
+    times.submitMs = LiGetMillis();
+    g_Instance->m_VideoDecoder->Decode(decodeId, offset, s_DecodeBuffer, pp::BlockUntilComplete());
     
     return DR_OK;
 }
@@ -398,6 +502,21 @@ void MoonlightInstance::PaintFinished(int32_t result) {
     ProfilerPrintDeltaFromNow("Paint -> Paint", s_LastPaintFinishedTime);
     s_LastPaintFinishedTime = ProfilerGetMillis();
     
+    // Client-side latency: frame fully received from the network -> painted
+    {
+        const FrameTimes& times = s_FrameTimes[m_CurrentPicture.decode_id % STATS_RING_SIZE];
+        if (times.receiveMs != 0) {
+            uint32_t total = (uint32_t)(LiGetMillis() - times.receiveMs);
+            s_StatsTotalSumMs += total;
+            s_StatsTotalCount++;
+            if (total > s_StatsTotalMaxMs) {
+                s_StatsTotalMaxMs = total;
+            }
+        }
+        s_StatsFramesPainted++;
+        MaybeReportStats();
+    }
+
     // Recycle the picture now that it's been painted
     uint64_t millis = ProfilerGetMillis();
     m_VideoDecoder->RecyclePicture(m_CurrentPicture);
@@ -414,10 +533,22 @@ void MoonlightInstance::PictureReady(int32_t result, PP_VideoPicture picture) {
         return;
     }
     
-    ProfilerPrintPackedDeltaFromNow("Decode -> PictureReady", picture.decode_id);
-    
+    // Decoder latency: handed to the decoder -> picture ready
+    {
+        const FrameTimes& times = s_FrameTimes[picture.decode_id % STATS_RING_SIZE];
+        if (times.submitMs != 0) {
+            uint32_t decodeMs = (uint32_t)(LiGetMillis() - times.submitMs);
+            s_StatsDecodeSumMs += decodeMs;
+            s_StatsDecodeCount++;
+            if (decodeMs > s_StatsDecodeMaxMs) {
+                s_StatsDecodeMaxMs = decodeMs;
+            }
+        }
+    }
+
     // Free a picture if there's one the renderer hasn't consumed yet
     if (m_HasNextPicture) {
+        s_StatsFramesDropped++;
         ProfilerPrintWarning("Decoder is outpacing renderer!");
         uint64_t millis = ProfilerGetMillis();
         m_VideoDecoder->RecyclePicture(m_NextPicture);

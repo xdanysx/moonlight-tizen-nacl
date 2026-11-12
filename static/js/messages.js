@@ -81,6 +81,8 @@ function handleMessage(msg) {
       // if (runningOnChrome) {
       //   chrome.power.requestKeepAwake("display");
       // }
+    } else if (msg.data.indexOf('videoStats: ') === 0) {
+      GamepadBridge.onVideoStats(msg.data.replace('videoStats: ', ''));
     } else if (msg.data.indexOf('gamepadAck: ') === 0) {
       GamepadBridge.onNativeAck(msg.data.replace('gamepadAck: ', ''));
     } else if (msg.data.indexOf('ProgressMsg: ') === 0) {

@@ -146,5 +146,9 @@ function remoteControllerHandler(e) {
       case tvKey.KEY_GREEN:
           Navigation.startBtn();
           break;
+      case tvKey.KEY_YELLOW:
+          // Show/hide the stats overlay (latency, fps, gamepads) during a stream
+          GamepadBridge.toggleOverlay();
+          break;
   }
 }

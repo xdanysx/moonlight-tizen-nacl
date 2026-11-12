@@ -16,8 +16,11 @@ var GamepadBridge = (function () {
   var POLL_INTERVAL_MS = 8;
   var OVERLAY_INTERVAL_MS = 250;
   var MAX_CONTROLLERS = 4;
-  // Set to true to show the debug overlay during a stream
-  var DEBUG_OVERLAY = false;
+  // Whether the stats overlay is shown during a stream. Toggled with the
+  // yellow key on the remote (see controllers.js).
+  var overlayVisible = false;
+  // Latest "videoStats" line from the native side, already formatted
+  var videoStatsText = 'video: waiting for stats...';
 
   var pollTimer = null;
   var overlayTimer = null;
@@ -187,7 +190,7 @@ var GamepadBridge = (function () {
 
   function describePads() {
     var raw = getRawPads();
-    var lines = [];
+    var lines = [videoStatsText, ''];
     var count = raw ? raw.length : 0;
     lines.push('getGamepads(): ' + count + ' slots');
 
@@ -225,7 +228,7 @@ var GamepadBridge = (function () {
   }
 
   function showOverlay() {
-    if (!DEBUG_OVERLAY) {
+    if (!overlayVisible || !pollTimer) {
       return;
     }
     if (!overlay) {
@@ -260,11 +263,51 @@ var GamepadBridge = (function () {
     nativeAccepted = 0;
     nativeDropped = 0;
     lastError = '';
+    videoStatsText = 'video: waiting for stats...';
     pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-    if (DEBUG_OVERLAY) {
-      showOverlay();
+    if (overlayVisible) {
+      startOverlay();
+    }
+  }
+
+  function startOverlay() {
+    showOverlay();
+    if (!overlayTimer) {
       overlayTimer = setInterval(showOverlay, OVERLAY_INTERVAL_MS);
     }
+  }
+
+  function stopOverlay() {
+    if (overlayTimer) {
+      clearInterval(overlayTimer);
+      overlayTimer = null;
+    }
+    hideOverlay();
+  }
+
+  // Yellow key: show or hide the overlay. Remembered for the next stream.
+  function toggleOverlay() {
+    overlayVisible = !overlayVisible;
+    if (overlayVisible && pollTimer) {
+      startOverlay();
+    } else {
+      stopOverlay();
+    }
+  }
+
+  // Called once per second with the native stats, see MaybeReportStats()
+  // in viddec.cpp:
+  // fps,decodeAvg,decodeMax,clientAvg,clientMax,rtt,rttVar,dropped,pending,spsHadRestriction
+  function onVideoStats(text) {
+    var v = text.split(',');
+    var fps = parseFloat(v[0]) || 0;
+    var sps = v[9] === '1' ? 'host' : (v[9] === '0' ? 'patched' : '?');
+    videoStatsText =
+      'fps: ' + fps.toFixed(1) +
+      '   network RTT: ' + v[5] + ' ms (+/- ' + v[6] + ')\n' +
+      'decode: avg ' + v[1] + ' ms, max ' + v[2] + ' ms\n' +
+      'received -> shown: avg ' + v[3] + ' ms, max ' + v[4] + ' ms\n' +
+      'dropped frames: ' + v[7] + '/s   queued: ' + v[8] + '   no-reorder SPS: ' + sps;
   }
 
   function stop() {
@@ -272,11 +315,7 @@ var GamepadBridge = (function () {
       clearInterval(pollTimer);
       pollTimer = null;
     }
-    if (overlayTimer) {
-      clearInterval(overlayTimer);
-      overlayTimer = null;
-    }
-    hideOverlay();
+    stopOverlay();
     lastSent = {};
     lastActiveSlots = [];
     console.log('%c[gamepadbridge.js]', 'color:green;', 'Stopped forwarding gamepads');
@@ -295,5 +334,12 @@ var GamepadBridge = (function () {
     return getActivePads()[slot] || null;
   }
 
-  return { start: start, stop: stop, onNativeAck: onNativeAck, getPadForSlot: getPadForSlot };
+  return {
+    start: start,
+    stop: stop,
+    toggleOverlay: toggleOverlay,
+    onVideoStats: onVideoStats,
+    onNativeAck: onNativeAck,
+    getPadForSlot: getPadForSlot
+  };
 })();
