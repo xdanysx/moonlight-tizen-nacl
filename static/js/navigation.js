@@ -101,6 +101,7 @@ var Views = {
         'externalAudioBtn',
         'mouseLockBtn',
         'optimizeGamesBtn',
+        'softwareDecodeBtn',
       ];
     }),
     left: function () { this.view.prev() },

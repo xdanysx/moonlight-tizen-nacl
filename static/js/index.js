@@ -16,6 +16,7 @@ function attachListeners() {
   $("#remoteAudioEnabledSwitch").on('click', saveRemoteAudio);
   $("#mouseLockEnabledSwitch").on('click', saveMouseLock);
   $('#optimizeGamesSwitch').on('click', saveOptimize);
+  $('#softwareDecodeSwitch').on('click', saveSoftwareDecode);
   $('#addHostCell').on('click', addHost);
   $('#backIcon').on('click', showHostsAndSettingsMode);
   $('#quitCurrentApp').on('click', stopGameWithConfirmation);
@@ -681,6 +682,7 @@ function startGame(host, appID) {
       // we told the user it was in Mbps. We're dirty liars and use Kbps behind their back.
       var bitrate = parseInt($("#bitrateSlider").val()) * 1000;
       var mouse_lock_enabled = $("#mouseLockEnabledSwitch").parent().hasClass('is-checked') ? "1" : "0";
+      var software_decode = $("#softwareDecodeSwitch").parent().hasClass('is-checked') ? "1" : "0";
       console.log('%c[index.js, startGame]', 'color:green;', 'startRequest:' + host.address + ":" + streamWidth + ":" + streamHeight + ":" + frameRate + ":" + bitrate + ":" + optimize + ":" + mouse_lock_enabled);
 
       var rikey = generateRemoteInputKey();
@@ -705,7 +707,7 @@ function startGame(host, appID) {
 
           sendMessage('startRequest', [host.address, streamWidth, streamHeight, frameRate,
           bitrate.toString(), rikey, rikeyid.toString(), mouse_lock_enabled, host.appVersion, host.gfeVersion,
-          $root.find('sessionUrl0').text().trim()
+          $root.find('sessionUrl0').text().trim(), software_decode
           ]);
         }, function (failedResumeApp) {
           console.error('%c[index.js, startGame]', 'color:green;', 'Failed to resume the app! Returned error was' + failedResumeApp);
@@ -743,7 +745,7 @@ function startGame(host, appID) {
 
         sendMessage('startRequest', [host.address, streamWidth, streamHeight, frameRate,
         bitrate.toString(), rikey, rikeyid.toString(), mouse_lock_enabled, host.appVersion, host.gfeVersion,
-        $root.find('sessionUrl0').text().trim()
+        $root.find('sessionUrl0').text().trim(), software_decode
         ]);
       }, function (failedLaunchApp) {
         console.error('%c[index.js, launchApp]', 'color: green;', 'Failed to launch app width id: ' + appID + '\nReturned error was: ' + failedLaunchApp);
@@ -1025,6 +1027,15 @@ function saveRemoteAudio() {
   }, 100);
 }
 
+function saveSoftwareDecode() {
+  // Same delay as the other toggles, so the class name has changed first
+  setTimeout(function () {
+    var softwareDecodeState = $("#softwareDecodeSwitch").parent().hasClass('is-checked');
+    console.log('%c[index.js, saveSoftwareDecode]', 'color: green;', 'Saving software decode state : ' + softwareDecodeState);
+    storeData('softwareDecode', softwareDecodeState, null);
+  }, 100);
+}
+
 function saveMouseLock() {
   // MaterialDesignLight uses the mouseup trigger, so we give it some time to change the class name before
   // checking the new state
@@ -1115,6 +1126,15 @@ function onWindowLoad() {
           $('#selectResolution').text($(this).text()).data('value', previousValue.resolution);
         }
       });
+    }
+  });
+
+  console.log('Load stored software decode prefs');
+  getData('softwareDecode', function (previousValue) {
+    if (previousValue.softwareDecode == true) {
+      document.querySelector('#softwareDecodeBtn').MaterialIconToggle.check();
+    } else {
+      document.querySelector('#softwareDecodeBtn').MaterialIconToggle.uncheck();
     }
   });
 

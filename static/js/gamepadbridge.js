@@ -304,13 +304,14 @@ var GamepadBridge = (function () {
     var fps = parseFloat(v[0]) || 0;
     var sps = v[9] === '1' ? 'host' : (v[9] === '0' ? 'patched' : '?');
     var aud = v[10] === '1' ? 'ON' : 'off';
+    var decoder = v[11] === '1' ? 'SOFTWARE (CPU)' : 'hardware';
     videoStatsText =
       'fps: ' + fps.toFixed(1) +
       '   network RTT: ' + v[5] + ' ms (+/- ' + v[6] + ')\n' +
       'decode: avg ' + v[1] + ' ms, max ' + v[2] + ' ms\n' +
       'received -> shown: avg ' + v[3] + ' ms, max ' + v[4] + ' ms\n' +
       'dropped frames: ' + v[7] + '/s   queued: ' + v[8] + '   no-reorder SPS: ' + sps + '\n' +
-      'AUD trick (blue key): ' + aud;
+      'AUD trick (blue key): ' + aud + '   decoder: ' + decoder;
   }
 
   // Blue key: switch the experimental "AUD after each frame" trick on/off.

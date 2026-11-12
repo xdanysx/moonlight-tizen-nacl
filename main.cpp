@@ -143,7 +143,8 @@ void* MoonlightInstance::ConnectionThreadFunc(void* context) {
                             &MoonlightInstance::s_ClCallbacks,
                             &MoonlightInstance::s_DrCallbacks,
                             &MoonlightInstance::s_ArCallbacks,
-                            NULL, 0,
+                            NULL,
+                            me->m_ForceSoftwareDecode ? DR_FLAG_FORCE_SW_DECODE : 0,
                             NULL, 0);
     if (err != 0) {
         // Notify the JS code that the stream has ended
@@ -266,6 +267,11 @@ void MoonlightInstance::HandleStartStream(int32_t callbackId, pp::VarArray args)
     m_GfeVersion = gfeversion;
     m_RtspUrl = rtspurl;
     m_MouseLockingFeatureEnabled = stoi(mouse_lock);
+
+    // Optional 12th parameter: force software (CPU) decoding
+    m_ForceSoftwareDecode = args.GetLength() > 11 && args.Get(11).AsString() == "1";
+    response = std::string("Setting software decode to: ") + (m_ForceSoftwareDecode ? "1" : "0");
+    PostMessage(response);
     
     // Initialize the rendering surface before starting the connection
     if (InitializeRenderingSurface(m_StreamConfig.width, m_StreamConfig.height)) {

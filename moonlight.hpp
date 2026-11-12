@@ -56,6 +56,7 @@ class MoonlightInstance : public pp::Instance, public pp::MouseLock {
         explicit MoonlightInstance(PP_Instance instance) :
             pp::Instance(instance),
             pp::MouseLock(this),
+            m_ForceSoftwareDecode(false),
             m_HasNextPicture(false),
             m_IsPainting(false),
             m_OpusDecoder(NULL),
@@ -182,6 +183,7 @@ class MoonlightInstance : public pp::Instance, public pp::MouseLock {
         std::string m_GfeVersion;
         std::string m_RtspUrl;
         bool m_MouseLockingFeatureEnabled;
+        bool m_ForceSoftwareDecode;
         STREAM_CONFIGURATION m_StreamConfig;
         bool m_Running;
         

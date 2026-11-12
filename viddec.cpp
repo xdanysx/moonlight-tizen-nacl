@@ -44,6 +44,9 @@ static uint32_t s_StatsTotalCount;
 // SPS info for the overlay: did the host send num_reorder_frames itself?
 static int s_SpsHadRestriction = -1;
 
+// Decoder in use, for the overlay: 0 = hardware, 1 = software
+static int s_UsingSoftwareDecoder = 0;
+
 // Access unit delimiter NAL (type 9, primary_pic_type 7 = any slice type)
 static const unsigned char k_AudNalu[] = { 0x00, 0x00, 0x00, 0x01, 0x09, 0xF0 };
 // Whether an AUD is appended after each frame. Toggled live from JS with
@@ -95,7 +98,8 @@ static void MaybeReportStats() {
        << s_StatsFramesDropped << ","
        << LiGetPendingVideoFrames() << ","
        << s_SpsHadRestriction << ","
-       << (s_AppendAud ? 1 : 0);
+       << (s_AppendAud ? 1 : 0) << ","
+       << s_UsingSoftwareDecoder;
     g_Instance->PostMessage(pp::Var(ss.str()));
 
     s_StatsWindowStartMs = now;
@@ -255,7 +259,9 @@ int MoonlightInstance::VidDecSetup(int videoFormat, int width, int height, int r
         err = PP_ERROR_NOTSUPPORTED;
     }
 
+    s_UsingSoftwareDecoder = 0;
     if (err == PP_ERROR_NOTSUPPORTED) {
+        s_UsingSoftwareDecoder = 1;
         // Fallback to software decoding
         err = g_Instance->m_VideoDecoder->Initialize(
            g_Instance->m_Graphics3D,
