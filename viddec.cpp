@@ -44,6 +44,16 @@ static uint32_t s_StatsTotalCount;
 // SPS info for the overlay: did the host send num_reorder_frames itself?
 static int s_SpsHadRestriction = -1;
 
+// Access unit delimiter NAL (type 9, primary_pic_type 7 = any slice type)
+static const unsigned char k_AudNalu[] = { 0x00, 0x00, 0x00, 0x01, 0x09, 0xF0 };
+// Whether an AUD is appended after each frame. Toggled live from JS with
+// the blue remote key, so its effect can be compared in the stats overlay.
+static volatile bool s_AppendAud = true;
+
+void MoonlightInstance::VidDecSetAppendAud(bool enable) {
+    s_AppendAud = enable;
+}
+
 static void ResetStats() {
     memset(s_FrameTimes, 0, sizeof(s_FrameTimes));
     s_NextDecodeId = 0;
@@ -84,7 +94,8 @@ static void MaybeReportStats() {
        << rttVariance << ","
        << s_StatsFramesDropped << ","
        << LiGetPendingVideoFrames() << ","
-       << s_SpsHadRestriction;
+       << s_SpsHadRestriction << ","
+       << (s_AppendAud ? 1 : 0);
     g_Instance->PostMessage(pp::Var(ss.str()));
 
     s_StatsWindowStartMs = now;
@@ -349,7 +360,7 @@ int MoonlightInstance::VidDecSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
     unsigned int offset;
     unsigned int totalLength;
 
-    totalLength = decodeUnit->fullLength;
+    totalLength = decodeUnit->fullLength + sizeof(k_AudNalu);
     if (decodeUnit->frameType == FRAME_TYPE_IDR) {
         // Add some extra space for the SPS fixup
         totalLength += 32;
@@ -376,7 +387,15 @@ int MoonlightInstance::VidDecSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
         
         entry = entry->next;
     }
-    
+
+    // Experimental: end each frame with an access unit delimiter. Decoders
+    // that only finish a picture once they see the start of the next one
+    // can then output it right away instead of one frame later.
+    if (s_AppendAud) {
+        memcpy(&s_DecodeBuffer[offset], k_AudNalu, sizeof(k_AudNalu));
+        offset += sizeof(k_AudNalu);
+    }
+
     // Start the decoding. The decode id indexes the stats ring, so we can
     // tell in PictureReady/PaintFinished how long this frame took.
     uint32_t decodeId = s_NextDecodeId++;

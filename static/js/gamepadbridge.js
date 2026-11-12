@@ -297,17 +297,34 @@ var GamepadBridge = (function () {
 
   // Called once per second with the native stats, see MaybeReportStats()
   // in viddec.cpp:
-  // fps,decodeAvg,decodeMax,clientAvg,clientMax,rtt,rttVar,dropped,pending,spsHadRestriction
+  // fps,decodeAvg,decodeMax,clientAvg,clientMax,rtt,rttVar,dropped,pending,
+  // spsHadRestriction,appendAud
   function onVideoStats(text) {
     var v = text.split(',');
     var fps = parseFloat(v[0]) || 0;
     var sps = v[9] === '1' ? 'host' : (v[9] === '0' ? 'patched' : '?');
+    var aud = v[10] === '1' ? 'ON' : 'off';
     videoStatsText =
       'fps: ' + fps.toFixed(1) +
       '   network RTT: ' + v[5] + ' ms (+/- ' + v[6] + ')\n' +
       'decode: avg ' + v[1] + ' ms, max ' + v[2] + ' ms\n' +
       'received -> shown: avg ' + v[3] + ' ms, max ' + v[4] + ' ms\n' +
-      'dropped frames: ' + v[7] + '/s   queued: ' + v[8] + '   no-reorder SPS: ' + sps;
+      'dropped frames: ' + v[7] + '/s   queued: ' + v[8] + '   no-reorder SPS: ' + sps + '\n' +
+      'AUD trick (blue key): ' + aud;
+  }
+
+  // Blue key: switch the experimental "AUD after each frame" trick on/off.
+  // It starts on in the native code, so the first press turns it off.
+  var appendAud = true;
+  function toggleAppendAud() {
+    appendAud = !appendAud;
+    if (common.naclModule) {
+      common.naclModule.postMessage({
+        'callbackId': 0,
+        'method': 'setAppendAud',
+        'params': [appendAud ? 1 : 0]
+      });
+    }
   }
 
   function stop() {
@@ -338,6 +355,7 @@ var GamepadBridge = (function () {
     start: start,
     stop: stop,
     toggleOverlay: toggleOverlay,
+    toggleAppendAud: toggleAppendAud,
     onVideoStats: onVideoStats,
     onNativeAck: onNativeAck,
     getPadForSlot: getPadForSlot

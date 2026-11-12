@@ -150,5 +150,9 @@ function remoteControllerHandler(e) {
           // Show/hide the stats overlay (latency, fps, gamepads) during a stream
           GamepadBridge.toggleOverlay();
           break;
+      case tvKey.KEY_BLUE:
+          // Experimental: toggle the "AUD after each frame" decoder trick
+          GamepadBridge.toggleAppendAud();
+          break;
   }
 }

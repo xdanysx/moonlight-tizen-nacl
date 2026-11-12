@@ -176,6 +176,8 @@ void MoonlightInstance::HandleMessage(const pp::Var& var_message) {
     // Checked first because it arrives every few milliseconds during a stream
     if (strcmp(method.c_str(), MSG_GAMEPAD_STATE) == 0) {
         HandleGamepadState(params);
+    } else if (strcmp(method.c_str(), "setAppendAud") == 0) {
+        VidDecSetAppendAud(params.GetLength() > 0 && params.Get(0).AsInt() != 0);
     } else if (strcmp(method.c_str(), MSG_START_REQUEST) == 0) {
         HandleStartStream(callbackId, params);
     } else if (strcmp(method.c_str(), MSG_STOP_REQUEST) == 0) {
